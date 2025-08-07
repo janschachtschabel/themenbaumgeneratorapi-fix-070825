@@ -29,9 +29,19 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   - Automatische Textnormalisierung
 
 **Geänderte Dateien:**
-- `main.py`: Neue `extract_educational_context_info()` Funktion und erweiterte Kontext-Generierung
-  - Integration in bestehende Prompt-Kontext-Logik (Zeilen 219-230)
-  - Erweiterte Kontext-Informationen für alle Themenbaumgenerierungen
+
+**`main.py`:**
+- Neue `extract_educational_context_info()` Funktion (Zeilen 42-72)
+  - URI-Parsing und Lesbarkeitsverbesserung
+  - Robuste Behandlung verschiedener URI-Formate
+- Erweiterte Kontext-Generierung (Zeilen 219-230):
+  ```python
+  # Extrahiere lesbare Bildungsstufen-Information
+  readable_context = extract_educational_context_info(topic_tree_request.educational_context_uri)
+  if readable_context:
+      context_info.append(f"Zielgruppe/Bildungsstufe: {readable_context}")
+  ```
+- Integration in alle Themenbaumgenerierungen für bildungsstufengerechte Inhalte
 
 **Beispiel:**
 ```
@@ -70,15 +80,28 @@ Prompt-Kontext:
 - `src/DTOs/description_request.py`: Request-Modell für den neuen Endpunkt
 
 **Geänderte Dateien:**
-- `src/prompts.py`: Neuer DESCRIPTION_PROMPT_TEMPLATE mit verstärkten Längenanforderungen
-- `main.py`: Neuer `/generate-collection-description` Endpunkt mit intelligenter Post-Processing
-- `src/structured_text_helper.py`: Neue `clean_description_text()` Funktion für konsistente Text-Bereinigung
+
+**`src/prompts.py`:**
+- Neuer DESCRIPTION_PROMPT_TEMPLATE (Zeilen 148-170)
+- Verstärkte Längenanforderungen und explizite Plain-Text-Anweisungen
+
+**`main.py`:**
+- Neuer `/generate-collection-description` Endpunkt (Zeilen 326-393)
+- Import von DescriptionRequest und DESCRIPTION_PROMPT_TEMPLATE (Zeilen 14-15)
+- Intelligente Post-Processing mit JSON-Extraktion (Zeilen 398-418)
+- Text-Bereinigung für alle Formatierungszeichen (Zeilen 420-428)
+
+**`src/structured_text_helper.py`:**
+- Neue `clean_description_text()` Funktion (Zeilen 14-37)
+- Integration in Collection-Verarbeitung (Zeile 49)
 
 **Implementierte Funktionen:**
 - `clean_description_text()`: Zentrale Funktion zur Bereinigung von Beschreibungstexten
   - Entfernt alle Arten von Zeilenwechseln (`\n`, `\r`, `\t`)
   - Normalisiert Leerzeichen und entfernt Anführungszeichen
   - Wird automatisch auf alle Collection-Beschreibungen angewendet
+- `generate_description()`: Neuer API-Endpunkt mit vollständiger Fehlerbehandlung
+- Intelligente JSON-Extraktion falls AI JSON statt Plain-Text zurückgibt
 
 ## [1.2.2] - 2025-01-07
 
@@ -97,6 +120,33 @@ Prompt-Kontext:
 - **BASE_INSTRUCTIONS erweitert**: Vollständige Integration der detaillierten Beschreibungsanforderungen in die zentralen Formatierungsregeln
 - **Prompt-Templates optimiert**: Alle Templates (MAIN, SUB, LP) referenzieren jetzt BASE_INSTRUCTIONS und integrieren konfigurierbare Parameter
 - **API-Dokumentation**: Erweiterte Beschreibung der neuen Features und Parameter
+
+### Technische Details
+
+#### Geänderte Dateien
+
+**`src/DTOs/topic_tree_request.py`:**
+- Hinzufügung `max_description_length` Parameter (Zeilen 50-58)
+
+**`src/prompts.py`:**
+- Vollständige Überarbeitung der BASE_INSTRUCTIONS (Zeilen 17-40)
+- Stilverbesserung: Vermeidung repetitiver Phrasen (Zeile 34)
+- Optimierung aller Prompt-Templates (MAIN, SUB, LP) zur Referenzierung der BASE_INSTRUCTIONS
+
+**`main.py`:**
+- **Kontext-Informationen für AI-Prompts (Zeilen 219-230):**
+  ```python
+  # 2a) Kontext-Informationen für Fach und Bildungsstufe hinzufügen
+  context_info = []
+  if topic_tree_request.discipline_uri:
+      context_info.append(f"Fachbereich-URIs: {', '.join(topic_tree_request.discipline_uri)}")
+  if topic_tree_request.educational_context_uri:
+      context_info.append(f"Bildungsstufe-URIs: {', '.join(topic_tree_request.educational_context_uri)}")
+  context_instructions = (
+      f"Kontext-Informationen:\n{chr(10).join(context_info)}" if context_info else ""
+  )
+  ```
+- Integration `max_description_length` Parameter in alle Prompt-Aufrufe (Zeilen 204, 222, 240)
 
 ## [1.2.1] - 2025-01-07
 
