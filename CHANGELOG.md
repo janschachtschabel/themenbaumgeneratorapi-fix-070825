@@ -106,45 +106,16 @@ Prompt-Kontext:
   **Problem-Analyse:**
   - **Hauptproblem**: URIs aus dem Request wurden nicht in die Properties der Collections übertragen
   - **Ursache**: Properties wurden nur mit ihren bestehenden (leeren) Werten überschrieben
-  - **Zusätzlich**: Metadaten flossen nicht als Kontext in die AI-Prompts ein
   
   **Root Cause:**
   - `structured_text_helper.py` Zeilen 58, 60: Properties wurden initial mit leeren Listen für `ccm_educationalcontext` und `ccm_taxonid` erstellt
   - `main.py` Zeilen 258-280: Properties wurden nur mit ihren bestehenden (leeren) Werten überschrieben, anstatt die URIs aus dem Request zu verwenden
 
-### Hinzugefügt
-- **Kontext-Integration**: Fach- und Bildungsstufenkontext fließt jetzt in AI-Prompts ein
-
-### Geändert
-- **BASE_INSTRUCTIONS erweitert**: Vollständige Integration der detaillierten Beschreibungsanforderungen in die zentralen Formatierungsregeln
-- **Prompt-Templates optimiert**: Alle Templates (MAIN, SUB, LP) referenzieren jetzt BASE_INSTRUCTIONS und integrieren konfigurierbare Parameter
-- **API-Dokumentation**: Erweiterte Beschreibung der neuen Features und Parameter
-
 ### Technische Details
 
 #### Geänderte Dateien
 
-**`src/DTOs/topic_tree_request.py`:**
-- Hinzufügung `max_description_length` Parameter (Zeilen 50-58)
-
-**`src/prompts.py`:**
-- Vollständige Überarbeitung der BASE_INSTRUCTIONS (Zeilen 17-40)
-- Stilverbesserung: Vermeidung repetitiver Phrasen (Zeile 33)
-- Optimierung aller Prompt-Templates (MAIN, SUB, LP) zur Referenzierung der BASE_INSTRUCTIONS
-
 **`main.py`:**
-- **Metadaten-Bugfix - Kontext-Informationen für AI-Prompts (Zeilen 179-186):**
-  ```python
-  # 2a) Kontext-Informationen für Fach und Bildungsstufe hinzufügen
-  context_info = []
-  if topic_tree_request.discipline_uri:
-      context_info.append(f"Fachbereich-URIs: {', '.join(topic_tree_request.discipline_uri)}")
-  if topic_tree_request.educational_context_uri:
-      context_info.append(f"Bildungsstufe-URIs: {', '.join(topic_tree_request.educational_context_uri)}")
-  context_instructions = (
-      f"Kontext-Informationen:\n{chr(10).join(context_info)}" if context_info else ""
-  )
-  ```
 - **Metadaten-Bugfix - Properties-Update (Zeilen 268, 269, 277, 278, 286, 287):**
   ```python
   # Vorher (leere Arrays aus Properties):
@@ -155,41 +126,8 @@ Prompt-Kontext:
   ccm_taxonid=topic_tree_request.discipline_uri or [],
   ccm_educationalcontext=topic_tree_request.educational_context_uri or [],
   ```
-- Integration neuer Parameter (`context_instructions`, `max_description_length`) in alle Prompt-Aufrufe
 
-#### Architektur-Verbesserungen
-- Zentrale Konfiguration aller Beschreibungsregeln in BASE_INSTRUCTIONS
-- Eliminierung von Code-Duplikation in Prompt-Templates
-- Konsistente Qualitätsstandards für alle Hierarchieebenen (Haupt-, Unter-, Lehrplanthemen)
+## [1.2.0] - Letzter offizieller Stand der API am 07.08.2025
 
-### Migration
-Bestehende API-Aufrufe funktionieren weiterhin ohne Änderungen. Der neue Parameter `max_description_length` ist optional und verwendet standardmäßig 500 Zeichen.
-
-### Beispiel-Request
-```json
-{
-  "theme": "Physik in der Sekundarstufe 2",
-  "num_main_topics": 5,
-  "num_subtopics": 3,
-  "num_curriculum_topics": 2,
-  "discipline_uri": ["http://w3id.org/openeduhub/vocabs/discipline/460"],
-  "educational_context_uri": ["http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_2"],
-  "max_description_length": 500
-}
-```
-
-## [1.2.0] - 2024-XX-XX
-
-### Hinzugefügt
 - Grundlegende Themenbaumgenerierung mit Haupt-, Unter- und Lehrplanthemen
-- OpenAI-Integration für AI-gestützte Inhaltsgenerierung
-- FastAPI-basierte REST-API
-- Strukturierte Metadaten für Bildungssammlungen
-- Docker-Unterstützung
 
-### Funktionen
-- Hierarchische Themenbaumstruktur
-- Konfigurierbare Anzahl von Themen pro Ebene
-- Optionale spezielle Themen (Allgemeines, Methodik und Didaktik)
-- JSON-basierte API-Antworten
-- Swagger/OpenAPI-Dokumentation
