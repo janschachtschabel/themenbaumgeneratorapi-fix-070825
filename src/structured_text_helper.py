@@ -11,30 +11,6 @@ from src.DTOs.properties import Properties
 from src.prompts import BASE_INSTRUCTIONS
 
 
-def clean_description_text(text: str) -> str:
-    """
-    Bereinigt Beschreibungstext von Escape-Zeichen und Zeilenwechseln.
-    """
-    if not text:
-        return text
-    
-    import re
-    
-    # Bereinige alle Arten von Zeilenwechseln und formatiere als sauberen Text
-    text = text.replace('\\n', ' ')  # Escape-Sequenzen
-    text = text.replace('\n', ' ')   # Echte Zeilenwechsel
-    text = text.replace('\r', ' ')   # Carriage Returns
-    text = text.replace('\t', ' ')   # Tabs
-    
-    # Entferne Anführungszeichen am Anfang und Ende
-    text = text.strip('"\'')
-    
-    # Mehrfache Leerzeichen durch einzelne ersetzen
-    text = re.sub(r'\s+', ' ', text).strip()
-    
-    return text
-
-
 @backoff.on_exception(backoff.expo, (RateLimitError, APIError), max_tries=5, jitter=backoff.full_jitter)
 async def generate_structured_text(client: AsyncOpenAI, prompt: str, model: str) -> Optional[List[Collection]]:
     """
@@ -45,8 +21,8 @@ async def generate_structured_text(client: AsyncOpenAI, prompt: str, model: str)
         resp = await client.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": BASE_INSTRUCTIONS}, {"role": "user", "content": prompt}],
-            max_tokens=2000,
-            temperature=0.7,
+            # max_tokens=2000,
+            # temperature=0.7,
         )
         content = resp.choices[0].message.content
         if not content.strip():
@@ -68,16 +44,16 @@ async def generate_structured_text(client: AsyncOpenAI, prompt: str, model: str)
             shorttitle = item.get("shorttitle", "")
             desc = item.get("description", "")
             keywords = item.get("keywords", [])
-            
-            # Bereinige Beschreibungstext von Escape-Zeichen und Zeilenwechseln
-            desc = clean_description_text(desc)
 
+            if desc:
+                # check the length of the description w.r.t. the word-limit (which is defined in prompts.py)
+                logger.debug(f"Description length for \"{title}\": {len(desc.split())} words ({len(desc)} chars)")
+                pass
             # Falls das Modell aus irgendeinem Grund leere Werte geliefert hat
             if not desc:
                 desc = f"Beschreibung für {title}"
             if not keywords:
                 keywords = [title.lower()]
-
             # Baue ein Properties-Objekt mit noch leeren URIs
             prop = Properties(
                 cclom_general_keyword=keywords,

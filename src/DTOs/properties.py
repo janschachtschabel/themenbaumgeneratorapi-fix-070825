@@ -54,6 +54,15 @@ class Properties(BaseModel):
         serialization_alias="cm:title",
         examples=["Gesetze der Energieerhaltung"],
     )
+    text_statistics: dict = Field(
+        default_factory=dict,
+        description="Statistics about the description text (character count, word count)",
+        examples=[{
+            "character_count": 245,
+            "word_count": 42,
+            "character_count_with_spaces": 287
+        }]
+    )
 
     class Config:
         # settings used for (de-)serialization of the ``Properties``-model (by invoking an alias_generator)

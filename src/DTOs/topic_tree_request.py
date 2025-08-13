@@ -48,11 +48,11 @@ class TopicTreeRequest(BaseModel):
     )
 
     max_description_length: int = Field(
-        400, 
-        ge=50, 
-        le=2000, 
-        description="Maximale Zeichenlänge für Beschreibungstexte der Sammlungen (Standard: 400)", 
-        examples=[400, 300, 600]
+        60,
+        ge=40,
+        le=200,
+        description="Maximale Wortanzahl für Beschreibungstexte der Sammlungen (min. 200, max. 2000)",
+        examples=[60, 40, 200],
     )
 
     model: str = Field(

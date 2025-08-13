@@ -1,19 +1,23 @@
 import asyncio
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from loguru import logger
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
 
 from src.DTOs.collection import Collection
+from src.DTOs.description_request import DescriptionRequest
+from src.DTOs.enhanced_response import EnhancedTopicTreeResponse, GenerationMetadata
 from src.DTOs.ping import Ping
 from src.DTOs.properties import Properties
 from src.DTOs.topic_tree_request import TopicTreeRequest
-from src.DTOs.description_request import DescriptionRequest
 from src.prompts import MAIN_PROMPT_TEMPLATE, SUB_PROMPT_TEMPLATE, LP_PROMPT_TEMPLATE, DESCRIPTION_PROMPT_TEMPLATE
 from src.structured_text_helper import generate_structured_text
+from src.text_statistics_helper import add_text_statistics_to_collections, calculate_overall_statistics
+from src.vocab_helper import get_educational_context_pref_labels, get_discipline_pref_labels
 
 # ToDo: replace / remove unnecessary dependencies
 #  - replace "backoff" dependency since its unmaintained / abandonware
@@ -39,41 +43,11 @@ def get_openai_key():
     return os.getenv("OPENAI_API_KEY", "")
 
 
-def extract_educational_context_info(educational_context_uris: list) -> str:
-    """
-    Extrahiert lesbare Bildungsstufen-Informationen aus URIs.
-    
-    Args:
-        educational_context_uris: Liste von Bildungsstufen-URIs
-        
-    Returns:
-        str: Lesbare Bildungsstufen-Information oder leerer String
-        
-    Beispiel:
-        Input: ["http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_2"]
-        Output: "sekundarstufe_2"
-    """
-    if not educational_context_uris:
-        return ""
-    
-    readable_contexts = []
-    for uri in educational_context_uris:
-        # Extrahiere den letzten Teil der URI nach dem letzten '/'
-        if '/' in uri:
-            context_segment = uri.split('/')[-1]
-            # Ersetze Unterstriche durch Leerzeichen für bessere Lesbarkeit
-            readable_context = context_segment.replace('_', ' ')
-            readable_contexts.append(readable_context)
-        else:
-            # Falls keine URI-Struktur, verwende den ganzen String
-            readable_contexts.append(uri)
-    
-    return ', '.join(readable_contexts)
-
-
 # Erlaubt, dass das Collection-Modell sich selbst referenziert (subcollections)
 Collection.model_rebuild()
 # ToDo: figure out why model_rebuild() is called here
+
+API_VERSION = "1.2.5"
 
 # ------------------------------------------------------------------------------
 # 7) FastAPI App
@@ -102,7 +76,7 @@ app = FastAPI(
 
     Die API verwendet einen OpenAI API-Schlüssel, der über die Umgebungsvariable `OPENAI_API_KEY` bereitgestellt werden muss.
     """,
-    version="1.2.0",
+    version=API_VERSION,
     contact={"name": "Themenbaum Generator Support", "email": "support@example.com"},
     license_info={"name": "Proprietär", "url": "https://example.com/license"},
 )
@@ -111,7 +85,7 @@ app = FastAPI(
 
 @app.post(
     "/generate-topic-tree",
-    response_model=dict,
+    response_model=EnhancedTopicTreeResponse,
     summary="Generiere einen Themenbaum",
     description="""
     Generiert einen strukturierten Themenbaum basierend auf den übergebenen Parametern.
@@ -123,17 +97,12 @@ app = FastAPI(
 
     Jeder Knoten im Themenbaum enthält:
     - Titel und Kurztitel
-    - **Hochwertige Beschreibung** (ansprechend, prägnant, inhaltsfokussiert)
+    - Beschreibung
     - Schlagworte (Keywords)
     - Standardisierte Metadaten (Properties)
 
-    **Neue Features:**
-    - **Konfigurierbare Beschreibungslänge**: Parameter ``max_description_length`` (Standard: 500 Zeichen)
-    - **Verbesserte Beschreibungsqualität**: Ansprechende, zielgruppengerechte Texte ohne repetitive Phrasen
-    - **Metadaten-Integration**: URIs für Fach und Bildungsstufe werden korrekt in die JSON-Ausgabe übertragen
-
     Optional können URIs für Fach und Bildungsstufe übergeben werden (via ``discipline_uri`` und ``educational_context_uri``). 
-    Diese URIs werden als Metadaten in die Collections eingebettet und fließen als Kontext in die AI-Prompts ein.
+    Die URIs von Fach und Bildungsstufe werden als Metadaten in die Collections eingebettet und fließen als Kontext in die AI-Prompts ein.
     """,
     responses={
         200: {
@@ -145,7 +114,7 @@ app = FastAPI(
                             "title": "Physik in Anlehnung an die Lehrpläne der Sekundarstufe 2",
                             "description": "Themenbaum für Physik in der Sekundarstufe II",
                             "created_at": "2025-02-05T11:28:40+01:00",
-                            "version": "1.2.0",
+                            "version": API_VERSION,
                             "author": "Themenbaum Generator",
                         },
                         "collection": [
@@ -155,12 +124,16 @@ app = FastAPI(
                                 "properties": {
                                     "cclom:general_keyword": ["physik", "grundlagen", "sekundarstufe"],
                                     "ccm:collectionshorttitle": ["Mechanik"],
-                                    "ccm:educationalcontext": ["http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_2"],
+                                    "ccm:educationalcontext": [
+                                        "http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_2"
+                                    ],
                                     "ccm:educationalintendedenduserrole": [
                                         "http://w3id.org/openeduhub/vocabs/intendedEndUserRole/teacher"
                                     ],
                                     "ccm:taxonid": ["http://w3id.org/openeduhub/vocabs/discipline/460"],
-                                    "cm:description": ["Mechanische Bewegungen und Kräfte bilden das Fundament der Physik. Schüler entdecken die Gesetze der Kinematik und Dynamik durch praktische Experimente und mathematische Modelle."],
+                                    "cm:description": [
+                                        "Mechanische Bewegungen und Kräfte bilden das Fundament der Physik. Schüler entdecken die Gesetze der Kinematik und Dynamik durch praktische Experimente und mathematische Modelle."
+                                    ],
                                     "cm:title": ["Mechanik"],
                                 },
                                 "subcollections": [],
@@ -187,7 +160,7 @@ async def generate_topic_tree(topic_tree_request: TopicTreeRequest):
     - ``num_curriculum_topics``: Anzahl der Lehrplanthemen pro Unterthema (0 bis 20)
     - ``include_general_topic``: Falls True, fügt ein Hauptthema "Allgemeines" hinzu
     - ``include_methodology_topic``: Falls True, fügt ein Hauptthema "Methodik und Didaktik" hinzu
-    - ``max_description_length``: Maximale Zeichenlänge für Beschreibungstexte (Standard: 500, Bereich: 50-2000)
+    - ``max_description_length``: Maximale Anzahl von Wörtern für Beschreibungstexte (Default: 70, Bereich: 40-200)
     - ``discipline_uri``: Falls übergeben, werden diese URIs in den ``ccm:taxonid``-Properties eingebettet und fließen als Kontext in die AI-Prompts ein
     - ``educational_context_uri``: Falls übergeben, werden diese URIs in den ``ccm:educationalcontext``-Properties eingebettet und fließen als Kontext in die AI-Prompts ein
     """
@@ -215,22 +188,30 @@ async def generate_topic_tree(topic_tree_request: TopicTreeRequest):
             "\n".join(special_instructions) if special_instructions else "Keine besonderen Anweisungen."
         )
 
-        # 2a) Kontext-Informationen für Fach und Bildungsstufe hinzufügen
+        # 2a)
         context_info = []
         if topic_tree_request.discipline_uri:
             context_info.append(f"Fachbereich-URIs: {', '.join(topic_tree_request.discipline_uri)}")
+            if isinstance(topic_tree_request.discipline_uri, list):
+                _discipline_set = set()
+                for _discipline_uri in topic_tree_request.discipline_uri:  # type: str
+                    _discipline_pref_labels = get_discipline_pref_labels(_discipline_uri)
+                    if _discipline_pref_labels:
+                        _discipline_set.update(_discipline_pref_labels)
+                if _discipline_set:
+                    context_info.append(f"Fachbereich: {list(_discipline_set)}")
         if topic_tree_request.educational_context_uri:
-            # Füge sowohl URIs als auch lesbare Bildungsstufen-Info hinzu
             context_info.append(f"Bildungsstufe-URIs: {', '.join(topic_tree_request.educational_context_uri)}")
-            
-            # Extrahiere lesbare Bildungsstufen-Information
-            readable_context = extract_educational_context_info(topic_tree_request.educational_context_uri)
-            if readable_context:
-                context_info.append(f"Zielgruppe/Bildungsstufe: {readable_context}")
-        
-        context_instructions = (
-            f"Kontext-Informationen:\n{chr(10).join(context_info)}" if context_info else ""
-        )
+            if isinstance(topic_tree_request.educational_context_uri, list):
+                _edu_context_set = set()
+                for _uri in topic_tree_request.educational_context_uri:  # type: str
+                    # example _uri value: "http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1"
+                    _edu_context_pref_labels = get_educational_context_pref_labels(_uri)
+                    if _edu_context_pref_labels:
+                        _edu_context_set.update(_edu_context_pref_labels)
+                if _edu_context_set:
+                    context_info.append(f"Zielgruppe / Bildungsstufe: {list(_edu_context_set)}")
+        context_instructions = f"Kontext-Informationen:\n{'\n'.join(context_info)}" if context_info else ""
 
         logger.info(f"Generating {topic_tree_request.num_main_topics} main topics ('Hauptthemen') ...")
 
@@ -240,13 +221,13 @@ async def generate_topic_tree(topic_tree_request: TopicTreeRequest):
             prompt=MAIN_PROMPT_TEMPLATE.format(
                 themenbaumthema=topic_tree_request.theme,
                 num_main=topic_tree_request.num_main_topics,
-                existing_titles="",
                 special_instructions=special_instructions,
                 context_instructions=context_instructions,
                 max_description_length=topic_tree_request.max_description_length,
             ),
             model=topic_tree_request.model,
         )
+        # ToDo: extend generate_structured_text() function to include context_instructions
 
         if not main_topics:
             raise HTTPException(status_code=500, detail="Fehler bei der Generierung der Hauptthemen")
@@ -254,6 +235,10 @@ async def generate_topic_tree(topic_tree_request: TopicTreeRequest):
         logger.info("Received main topics ('Hauptthemen'). Beginning generation of sub topics ('Unterthemen') next.")
 
         # 4) Für jedes Hauptthema die Unterthemen generieren
+        # 4a) Erstelle Liste der existierenden Hauptthemen für Kontext
+        existing_main_topics_list = [f"- {topic.title}" for topic in main_topics]
+        existing_main_topics_formatted = "\n".join(existing_main_topics_list) if existing_main_topics_list else "Keine weiteren Hauptthemen vorhanden."
+        
         sub_topic_tasks = []
         for main_topic in main_topics:
             logger.info(f"Creating subtopic ('Unterthemen') task for '{main_topic.title}'")
@@ -262,6 +247,7 @@ async def generate_topic_tree(topic_tree_request: TopicTreeRequest):
                 main_theme=main_topic.title,
                 num_sub=topic_tree_request.num_subtopics,
                 context_instructions=context_instructions,
+                existing_main_topics=existing_main_topics_formatted,
                 max_description_length=topic_tree_request.max_description_length,
             )
             _task = generate_structured_text(
@@ -285,6 +271,10 @@ async def generate_topic_tree(topic_tree_request: TopicTreeRequest):
         lp_mapping = []  # List to track which main_topic and sub_topic each task corresponds to
 
         for main_topic in main_topics:
+            # 5a) Erstelle Liste der existierenden Unterthemen für Kontext
+            existing_subtopics_list = [f"- {subtopic.title}" for subtopic in main_topic.subcollections]
+            existing_subtopics_formatted = "\n".join(existing_subtopics_list) if existing_subtopics_list else "Keine weiteren Unterthemen vorhanden."
+            
             for sub_topic in main_topic.subcollections:
                 logger.info(f"Generating curriculum ('Lehrplan') task for '{sub_topic.title}'")
                 _lp_prompt = LP_PROMPT_TEMPLATE.format(
@@ -293,6 +283,8 @@ async def generate_topic_tree(topic_tree_request: TopicTreeRequest):
                     sub_theme=sub_topic.title,
                     num_lp=topic_tree_request.num_curriculum_topics,
                     context_instructions=context_instructions,
+                    existing_main_topics=existing_main_topics_formatted,
+                    existing_subtopics=existing_subtopics_formatted,
                     max_description_length=topic_tree_request.max_description_length,
                 )
                 _lp_task = generate_structured_text(
@@ -341,21 +333,34 @@ async def generate_topic_tree(topic_tree_request: TopicTreeRequest):
                         ccm_educationalcontext=topic_tree_request.educational_context_uri or [],
                     )
 
-        # 7) Finale Daten strukturieren (Metadaten + Collection-Liste)
-        final_data = {
-            "metadata": {
-                "title": topic_tree_request.theme,
-                "description": f"Themenbaum für {topic_tree_request.theme}",
-                "target_audience": "Lehrkräfte",
-                "created_at": datetime.now().isoformat(),
-                "version": "1.2.0",
-                "author": "Themenbaum Generator",
-            },
-            "collection": [topic.to_dict() for topic in main_topics],
-        }
-
-        # ToDo: actually return a JSON object (instead of a python dict) as soon as you're done with debugging
-        return final_data
+        # 7) Textstatistiken zu allen Collections hinzufügen
+        add_text_statistics_to_collections(main_topics)
+        
+        # 8) Gesamtstatistiken berechnen
+        overall_statistics = calculate_overall_statistics(main_topics)
+        
+        # 9) Metadaten für die Generierung erstellen
+        generation_metadata = GenerationMetadata(
+            theme=topic_tree_request.theme,
+            model=topic_tree_request.model,
+            num_main_topics=topic_tree_request.num_main_topics,
+            num_subtopics=topic_tree_request.num_subtopics,
+            num_curriculum_topics=topic_tree_request.num_curriculum_topics,
+            max_description_length=topic_tree_request.max_description_length,
+            include_general_topic=topic_tree_request.include_general_topic,
+            include_methodology_topic=topic_tree_request.include_methodology_topic,
+            discipline_uris=topic_tree_request.discipline_uri or [],
+            educational_context_uris=topic_tree_request.educational_context_uri or []
+        )
+        
+        # 10) Finale erweiterte Antwort strukturieren
+        enhanced_response = EnhancedTopicTreeResponse(
+            metadata=generation_metadata,
+            topic_tree=main_topics,
+            statistics=overall_statistics
+        )
+        
+        return enhanced_response
 
     except Exception as e:
         logger.error(f"Unhandled Exception occured while generating topic tree: {e}")
@@ -365,113 +370,81 @@ async def generate_topic_tree(topic_tree_request: TopicTreeRequest):
 @app.post(
     path="/generate-collection-description",
     response_model=str,
-    tags=["description generation"],
-    summary="Generiere Sammlungsbeschreibung",
+    tags=["Sammlungsbeschreibungen generieren"],
     description="""
     Generiert eine ansprechende Beschreibung für eine Sammlung von Bildungsressourcen
     basierend auf gegebenem Text und Kontext.
     
     **Parameter:**
+    - `max_description_length`: Maximale Anzahl von Wörtern für Beschreibungstexte (Default: 70, Bereich: 40-200)
+    - `model`: OpenAI-Modell (Default: gpt-4o-mini)
     - `text_context`: Text und Kontext für die Beschreibung (z.B. Thema, Zielgruppe, Inhalte)
-    - `max_description_length`: Maximale Zeichenlänge (Standard: 400, Bereich: 50-2000)
-    - `model`: OpenAI-Modell (Standard: gpt-4o-mini)
-    
-    **Rückgabe:**
-    - Ansprechende Beschreibung in zwei Absätzen gemäß den Qualitätskriterien
-    - Vermeidung repetitiver Phrasen
-    - Inhaltsfokussierte, zielgruppengerechte Formulierung
     """,
 )
-async def generate_description(description_request: DescriptionRequest):
+async def generate_collection_description(description_request: DescriptionRequest) -> str:
     """
-    Generiert eine ansprechende Sammlungsbeschreibung basierend auf Text und Kontext.
-    
-    Args:
-        description_request: Request mit text_context, max_description_length und model
-        
-    Returns:
-        str: Generierte Beschreibung als reiner Text
-        
-    Raises:
-        HTTPException: Bei Fehlern in der Generierung
+    Generiert eine ansprechende Sammlungsbeschreibung basierend auf gegebenem Text und Kontext.
+
+    :param description_request: Request mit text_content, max_description_length und model parameter
+    :return: Generierter Beschreibungstext als `str`
+    :raises HTTPException: Falls ein Fehler bei der Generierung aufgetreten ist
     """
+    logger.info(f"Generating collection description for '{description_request.text_context}' ...")
+
+    # fetch OpenAI API Key from .env file
+    openai_key = get_openai_key()
+    if not openai_key:
+        raise HTTPException(status_code=500, detail="OpenAI API Key nicht gefunden")
+    # init the OpenAI client
     try:
-        logger.info(f"Generating description for context: {description_request.text_context[:100]}...")
-        
-        # 1) OpenAI-Key holen
-        openai_key = get_openai_key()
-        if not openai_key:
-            raise HTTPException(status_code=500, detail="OpenAI API Key nicht gefunden")
-        
-        # 2) OpenAI-Client erstellen
-        try:
-            client = AsyncOpenAI(api_key=openai_key)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"OpenAI-Init-Fehler: {str(e)}")
-        
-        # 3) Prompt mit Parametern formatieren
+        client = AsyncOpenAI(api_key=openai_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OpenAI-Init-Fehler: {str(e)}")
+
+    try:
+        # prepare the OpenAI prompt with the given parameters
         formatted_prompt = DESCRIPTION_PROMPT_TEMPLATE.format(
             text_context=description_request.text_context,
-            max_description_length=description_request.max_description_length
+            max_description_length=description_request.max_description_length,
         )
-        
-        # 4) OpenAI API aufrufen
+        # ToDo: the "AI" generally ignores the max_description_length parameter
+        #  because it has no concept of character length and does not count characters.
+        # see: https://help.openai.com/en/articles/5072518-controlling-the-length-of-openai-model-responses
+        # GPT-5 offers "verbosity"-settings, which might be a solution
+        _system_prompt: ChatCompletionSystemMessageParam = ChatCompletionSystemMessageParam(
+            content="Du bist ein Experte für die Erstellung ansprechender Beschreibungstexte für Bildungsressourcen. "
+            "Antworte IMMER nur mit dem reinen Beschreibungstext. "
+            "NIEMALS mit JSON, Strukturen oder Anführungszeichen. NUR der reine Text. "
+            "WICHTIG: Nutze die VOLLSTÄNDIGE erlaubte Zeichenlänge - "
+            "schreibe ausführlich und detailliert bis zum Maximum.",
+            role="system",
+        )
+        _user_prompt: ChatCompletionUserMessageParam = ChatCompletionUserMessageParam(
+            content=formatted_prompt,
+            role="user",
+        )
+        _ts_before: datetime = datetime.now()
         response = await client.chat.completions.create(
             model=description_request.model,
             messages=[
-                {
-                    "role": "system",
-                    "content": "Du bist ein Experte für die Erstellung ansprechender Beschreibungstexte für Bildungsressourcen. Antworte IMMER nur mit dem reinen Beschreibungstext. NIEMALS mit JSON, Strukturen oder Anführungszeichen. NUR der reine Text. WICHTIG: Nutze die VOLLSTÄNDIGE erlaubte Zeichenlänge - schreibe ausführlich und detailliert bis zum Maximum."
-                },
-                {
-                    "role": "user",
-                    "content": formatted_prompt
-                }
+                _system_prompt,
+                _user_prompt,
             ],
-            temperature=0.7,
-            max_tokens=800
+            # temperature=0.7,
         )
-        
-        description = response.choices[0].message.content.strip()
-        
-        # Falls JSON zurückgegeben wurde, extrahiere nur die Beschreibung
-        import json
-        import re
-        
-        try:
-            # Versuche JSON zu parsen falls es JSON ist
-            if description.startswith('{') and description.endswith('}'):
-                json_data = json.loads(description)
-                # Suche nach beschreibung/description Feld
-                if 'beschreibung' in json_data:
-                    description = json_data['beschreibung']
-                elif 'description' in json_data:
-                    description = json_data['description']
-                else:
-                    # Falls kein bekanntes Feld, nimm den längsten String-Wert
-                    description = max([v for v in json_data.values() if isinstance(v, str)], key=len)
-        except:
-            # Falls JSON-Parsing fehlschlägt, verwende den ursprünglichen Text
-            pass
-        
-        # Bereinige alle Arten von Zeilenwechseln und formatiere als sauberen Text
-        description = description.replace('\\n', ' ')  # Escape-Sequenzen
-        description = description.replace('\n', ' ')   # Echte Zeilenwechsel
-        description = description.replace('\r', ' ')   # Carriage Returns
-        description = description.replace('\t', ' ')   # Tabs
-        
-        # Entferne Anführungszeichen am Anfang und Ende
-        description = description.strip('"\'')
-        
-        # Mehrfache Leerzeichen durch einzelne ersetzen
-        description = re.sub(r'\s+', ' ', description).strip()
-        
-        logger.info(f"Successfully generated description with {len(description)} characters")
-        return description
-        
+        # attention: setting the `max_token`-Parameter causes the API to return more text than requested.
+        # e.g.: when setting a max_token limit of 600 while also using a max_description_length of 200,
+        # it will rarely result in a response within the 200-char limit!
+
+        _ts_after: datetime = datetime.now()
+        _delta: timedelta = _ts_after - _ts_before
+        logger.debug(f"OpenAI-API-Call took {_delta.total_seconds()} seconds.")
+
+        _description = response.choices[0].message.content
+        return _description
     except Exception as e:
-        logger.error(f"Error generating description: {e}")
-        raise HTTPException(status_code=500, detail=f"Fehler bei der Beschreibungsgenerierung: {str(e)}")
+        logger.error(f"Error while generating collection description: {e}")
+        raise HTTPException(status_code=500, detail=f"Fehler bei der Generierung: {str(e)}")
 
 
 @app.get(path="/_ping", response_model=Ping, tags=["health check"])

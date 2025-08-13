@@ -5,6 +5,55 @@ Alle wichtigen Änderungen an diesem Projekt werden in dieser Datei dokumentiert
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2025-01-13
+
+### Hinzugefügt
+- **Hierarchische Kontext-Integration**: Prompt-Templates erhalten jetzt die bestehende Themenbaum-Struktur als Kontext
+  - **SUB_PROMPT_TEMPLATE**: Erhält Liste aller existierenden Hauptthemen (`{existing_main_topics}`)
+  - **LP_PROMPT_TEMPLATE**: Erhält Liste aller existierenden Hauptthemen (`{existing_main_topics}`) und Unterthemen (`{existing_subtopics}`)
+  - **Hierarchie-Kennzeichnung**: Klare Ebenen-Beschriftung (Ebene 1, 2, 3) für bessere Kontextverständnis
+  - **Verbesserte Abgrenzung**: Explizite Anweisungen zur Vermeidung von Überschneidungen zwischen Hierarchieebenen
+
+### Verbessert
+- **Prompt-Organisation**: Zentrale Verwaltung der Wortanzahl-Anweisungen in `BASE_INSTRUCTIONS`
+  - **Konsolidierung**: Wortanzahl-Regeln aus individuellen Templates in `BASE_INSTRUCTIONS` verschoben
+  - **Konsistenz**: Einheitliche Anwendung der Wortanzahl-Regeln auf alle Prompt-Templates
+  - **Redundanz-Eliminierung**: Doppelte Anweisungen in Templates entfernt
+- **DESCRIPTION_PROMPT_TEMPLATE**: Vollständige Integration der Beschreibungsregeln aus `BASE_INSTRUCTIONS`
+  - **Übertragung aller relevanten Regeln**: Aktive Formulierungen, Zielgruppenorientierung, Schlüsselbegriffe
+  - **Ausschluss irrelevanter Regeln**: Titel-, Hierarchie- und Kurztitel-Regeln nicht übertragen
+  - **Optimierte Struktur**: Klarere Trennung zwischen Wortanzahl- und Beschreibungsregeln
+
+### Geändert
+- **Backend-Integration**: Automatische Sammlung und Weitergabe der Themenbaum-Struktur
+  - **main.py Zeile 237-240**: Sammlung existierender Hauptthemen für SUB_PROMPT_TEMPLATE
+  - **main.py Zeile 273-276**: Sammlung existierender Unterthemen für LP_PROMPT_TEMPLATE
+  - **Formatierung**: Strukturierte Listen mit Bindestrich-Präfix für bessere Lesbarkeit
+
+### Behoben
+- **MAIN_PROMPT_TEMPLATE**: Entfernung unnötiger `{existing_main_topics}` Parameter (da Hauptthemen zuerst generiert werden)
+- **Backend-Parameter-Mapping**: Korrektur fehlender Parameter in Template-Aufrufen
+  - **main.py Zeile 222**: Entfernung des ungenutzten `existing_titles=""` Parameters
+  - **main.py Zeile 284**: Hinzufügung des fehlenden `existing_main_topics` Parameters für LP_PROMPT_TEMPLATE
+- **Template-Redundanz**: Eliminierung doppelter Informationen in LP_PROMPT_TEMPLATE und SUB_PROMPT_TEMPLATE
+
+### Technische Details
+
+**Geänderte Dateien:**
+- `src/prompts.py`: 
+  - `BASE_INSTRUCTIONS`: Erweitert um Wortanzahl-Sektion (7)
+  - `SUB_PROMPT_TEMPLATE`: Hinzugefügt `{existing_main_topics}` Parameter und Kontext-Sektion
+  - `LP_PROMPT_TEMPLATE`: Hinzugefügt `{existing_subtopics}` Parameter und Kontext-Sektion
+  - `DESCRIPTION_PROMPT_TEMPLATE`: Vollständige Übernahme der Beschreibungsregeln
+- `main.py`:
+  - Zeile 237-240: Implementierung `existing_main_topics_formatted` für Subtopic-Generierung
+  - Zeile 273-276: Implementierung `existing_subtopics_formatted` für Curriculum-Generierung
+  - Integration der neuen Parameter in `SUB_PROMPT_TEMPLATE.format()` und `LP_PROMPT_TEMPLATE.format()` Aufrufe
+
+**Neue Template-Parameter:**
+- `{existing_main_topics}`: Formatierte Liste aller Hauptthemen für Subtopic-Kontext
+- `{existing_subtopics}`: Formatierte Liste aller Unterthemen für Curriculum-Kontext
+
 ## [1.2.4] - 2025-01-07
 
 ### Hinzugefügt
